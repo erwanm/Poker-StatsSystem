@@ -23,7 +23,7 @@ Version 0.01
 our $VERSION = '0.01';
 
 # EM May 19 - changed BOM option to 0 as this seems to cause an error opening the file for ASCII files from PokerStars.EU
-#             Assuming that this will cause an issue with previous files from PokerStars.FR
+#             Assuming that this will cause an issue with previous files from PokerStars.FR?
 #
 #my %defaultOptions = ( "openAsUTF8WithBOM" => 1 );
 my %defaultOptions = ( "openAsUTF8WithBOM" => 0 );
@@ -650,24 +650,35 @@ sub parseTournament {
 			} elsif ($input->[$$lineNoRef] =~ m@^Buy-In: €[0-9.]+/€[0-9.]+/€[0-9.]+ EUR$@) {
 				$log->logwarn("Warning: tournament #$res{id} includes a bounty price pool, skipping.");
 			} else {  # regular so far...
-				if ($input->[$$lineNoRef] =~ m/Satellite$/) { # satellite are considered, but the prizes as tournaments are ignored
+				if ($input->[$$lineNoRef] =~ m/Satellite\s*$/) { # satellite are considered, but the prizes as tournaments are ignored
 					$res{satellite} = 1;
 					$$lineNoRef++;
-			    	$log->trace("Satellite found. Reading line '$input->[$$lineNoRef]'");
+					$log->trace("Satellite found. Reading line '$input->[$$lineNoRef]'");
 				}
-				($res{buyInMinusRake}, $res{rake}) = ($input->[$$lineNoRef] =~ m@^Buy-In: €([0-9.]+)/€([0-9.]+) EUR\s*$@) or $log->logconfess("Error: Expected 'Buy-In: ' instead of '$input->[$$lineNoRef]' (tournament $res{id}).");
-		    	$$lineNoRef++;
-		    	$log->trace("Reading line '$input->[$$lineNoRef]'");
+				if ($input->[$$lineNoRef] =~ m@^Buy-In: [0-9.]+/[0-9.]+\s*$@) {
+				    $log->logwarn("Warning: tournament #$res{id} doesn't have a regular buy-in price, skipping.");
+				    return undef;
+				}
+				($res{buyInMinusRake}, $res{rake}, $res{currency}) = ($input->[$$lineNoRef] =~ m@^Buy-In: \S([0-9.]+)/\S([0-9.]+) (EUR|USD)\s*$@) or $log->logconfess("Error: Expected 'Buy-In: ' instead of '$input->[$$lineNoRef]' (tournament $res{id}).");
+				$log->trace("res{buyInMinusRake}=$res{buyInMinusRake}, res{rake}=$res{rake}, res{currency}=$res{currency}");
+				$$lineNoRef++;
+				$log->trace("Reading line '$input->[$$lineNoRef]'");
 				($res{nbPlayers}) = ($input->[$$lineNoRef] =~ m/^(\d+) players/) or $log->logconfess("Error: Expected 'X players' instead of '$input->[$$lineNoRef]' (tournament $res{id}).");
-	    		$$lineNoRef++;
-		    	$log->trace("Reading line '$input->[$$lineNoRef]'");
+				$$lineNoRef++;
+				$log->trace("Reading line '$input->[$$lineNoRef]'");
 				$$lineNoRef++ if ($input->[$$lineNoRef] =~ m/^€[0-9.]+ EUR added to the prize pool by PokerStars\s*$/); # ok, skip this line
 				my $x = $input->[$$lineNoRef+1];
 				if ($input->[$$lineNoRef+1] =~ m/^Tournament is still in progress\s*/) {  # last possible case to skip
 					$log->logwarn("Warning: tournament #$res{id} was still in progress, skipping.") ;
 				} else {
-					$history->addTournament($self->_parseRegularTournament($input, $lineNoRef, \%res));  # at this step we always return a value
+				     # at this step we always return a value, UPDATE 2019 except if file is truncated (undef)
+				    my $tournData = $self->_parseRegularTournament($input, $lineNoRef, \%res);
+				    if (defined($tournData)) {
+					$history->addTournament($tournData); 
 					return \%res;
+				    } else {
+					$log->logwarn("Warning: the data for tournament #$res{id} is truncated, skipping.");
+				    }
 				}
 			}
 		} else {
@@ -690,20 +701,25 @@ sub _parseRegularTournament {
 		$log->trace("satellite is TRUE");
 		$log->logconfess("Satellite: expected 'Target Tournament', found '$input->[$$lineNoRef]' (tournament $res->{id})") if (!$input->[$$lineNoRef] =~ m/^Target Tournament/);
    		$$lineNoRef++;
-		$log->logconfess("Satellite: expected 'X tickets to the target tournament', found '$input->[$$lineNoRef]' (tournament $res->{id})") if (!$input->[$$lineNoRef] =~ m/^\d+ tickets to the target tournament\s*$/);
-   		$$lineNoRef += 2; # skip empty line
+		if ($input->[$$lineNoRef] =~ m/^\d+ tickets to the target tournament\s*$/) { # optional, some satellite tournaments don't have this line apparently
+		    $$lineNoRef += 2; # skip empty line
+		}
 	}
-	($res->{startDate}, $res->{startTime}) = ( $input->[$$lineNoRef] =~ m@^Tournament started ([0-9/]+) ([0-9:]+) CET@)  or $log->logconfess("Error: Expected 'Tournament started ' instead of '$input->[$$lineNoRef]' (tournament $res->{id}).");
+	($res->{startDate}, $res->{startTime}) = ( $input->[$$lineNoRef] =~ m@^Tournament started ([0-9/]+) ([0-9:]+) [CW]?ET@)  or $log->logconfess("Error: Expected 'Tournament started ' instead of '$input->[$$lineNoRef]' (tournament $res->{id}).");
 	$$lineNoRef++;
    	$log->trace("Reading line '$input->[$$lineNoRef]'");
 	if (!($input->[$$lineNoRef] =~ m/^\s*$/)) { # "Tournament finished..." is optional, replaced by an empty line if not present
-		($res->{endDate}, $res->{endTime}) = ( $input->[$$lineNoRef] =~ m@^Tournament finished ([0-9/]+) ([0-9:]+) CET@) or $log->logconfess("Error: Expected 'Tournament finished ' instead of '$input->[$$lineNoRef]' (tournament $res->{id}).");
+		($res->{endDate}, $res->{endTime}) = ( $input->[$$lineNoRef] =~ m@^Tournament finished ([0-9/]+) ([0-9:]+) [CW]?ET@) or $log->logconfess("Error: Expected 'Tournament finished ' instead of '$input->[$$lineNoRef]' (tournament $res->{id}).");
 	}
 	$$lineNoRef++;
    	$log->trace("Reading line '$input->[$$lineNoRef]'");
 	$res->{ranking} = $self->_parseTournamentRanking($input, $lineNoRef, $res);
 	$$lineNoRef++; # skip empty line
-   	$log->trace("Reading line '$input->[$$lineNoRef]'");
+	if (!defined($input->[$$lineNoRef])) {
+	    $log->debug("Truncated data, returning undef");
+	    return undef;
+	}
+   	$log->trace("Reading line '$input->[$$lineNoRef]' (lineNo=$$lineNoRef)");
 	($res->{myPosition}) = ( $input->[$$lineNoRef] =~ m/^You finished in ([\d]+)/) or $log->logconfess("Error: Expected 'You finished in ' instead of '$input->[$$lineNoRef]' (tournament $res->{id}).");
 	$$lineNoRef++;
 	$log->debug("Tournament $res->{id}: done. Returning structure");
