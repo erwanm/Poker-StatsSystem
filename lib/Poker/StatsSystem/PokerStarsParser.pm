@@ -69,11 +69,12 @@ sub parseHistoryFiles {
 	my $no = 0;
 	$progressPrinter->setTotal(scalar(@_)) if (defined($progressPrinter));
 	foreach my $filename (@_) {
+	    $log->debug("Parsing file '$filename' (history contains ".$historyData->nbTournaments()." tournaments and ".$historyData->nbHands()." hands)");
 		my $fh;
 		if ($self->{openAsUTF8WithBOM}) {
-			open_bom($fh, $filename, ) or $log->logconfess("Can not open '$filename'.");
+			open_bom($fh, $filename, ) or $log->logconfess("Cannot open '$filename'.");
 		} else {
-			open($fh, '<:encoding(utf-8)', $filename) or $log->logconfess("Can not open '$filename'.");
+			open($fh, '<:encoding(utf-8)', $filename) or $log->logconfess("Cannot open '$filename'.");
 		}
 		my @input = <$fh>; 
 		close($fh);

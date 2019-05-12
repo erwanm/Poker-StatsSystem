@@ -236,6 +236,17 @@ sub nbHands {
 
 
 
+sub getAllHands {
+    my $self = shift;
+    return $self->{hands};
+}
+
+
+sub getAllTournaments {
+    my $self = shift;
+    return $self->{tournaments};
+}
+
 
 =head1 AUTHOR
 

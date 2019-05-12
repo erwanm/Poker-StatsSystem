@@ -42,6 +42,8 @@ sub usage {
 	print $fh "     -m parse file(s) as Mbox email format.\n";
 	print $fh "     -q Quiet mode (do not print progress information to stdout).\n";
 	print $fh "     -r <path repository> set the location of the repository to use.\n";
+	print $fh "     -t <filename> saves a copy of the repository as a text file (for debugging)\n"; 
+	print $fh "\n"; 
 	print $fh "\n"; 
 }
 
